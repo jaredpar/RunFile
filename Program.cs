@@ -27,7 +27,7 @@ try
         return 1;
     }
 
-    var destDirectory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+    var destDirectory = Path.Combine(Path.GetTempPath(), "runf", Guid.NewGuid().ToString());
     Directory.CreateDirectory(destDirectory);
 
     CopySourceFiles(info, sourceDirectory, destDirectory);
@@ -54,7 +54,7 @@ string GetTargetFramework()
 
 void CopySourceFiles(ProjectInfo projectInfo, string sourceDirectory, string destDirectory)
 {
-    var nugetSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    var packageMap = new Dictionary<string, string?>();
     foreach (var sourceFilePath in projectInfo.SourceFiles)
     {
         var destFilePath = sourceFilePath.Substring(sourceDirectory.Length);
@@ -64,12 +64,17 @@ void CopySourceFiles(ProjectInfo projectInfo, string sourceDirectory, string des
         }
         destFilePath = Path.Combine(destDirectory, destFilePath);
         var content = File.ReadAllText(sourceFilePath);
-        content = ScanForDirectives(content);
+        if (Path.GetExtension(sourceFilePath) == ".cs")
+        {
+            content = ScanForDirectives(content);
+        }
         Directory.CreateDirectory(Path.GetDirectoryName(destFilePath)!);
         File.WriteAllText(destFilePath, content);
     }
 
-    projectInfo.PackageReferences.AddRange(nugetSet.OrderBy(x => x));
+    projectInfo.Packages.AddRange(packageMap
+        .OrderBy(x => x.Key)
+        .Select(x => new Package(x.Key, x.Value)));
 
     string ScanForDirectives(string content)
     {
@@ -85,8 +90,10 @@ void CopySourceFiles(ProjectInfo projectInfo, string sourceDirectory, string des
         {
             if (line.StartsWith("#r"))
             {
-                var package = line.Substring(2).Trim();
-                _ = nugetSet.Add(package);
+                var items = line.Substring(2).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var name = items[0];
+                var version = items.Length > 1 ? items[1] : null;
+                packageMap[name] = version;
                 any = true;
             }
             else
@@ -104,12 +111,15 @@ void CopySourceFiles(ProjectInfo projectInfo, string sourceDirectory, string des
 void CreateProjectFile(ProjectInfo projectInfo, string destDirectory)
 {
     string itemGroups = "";
-    if (projectInfo.PackageReferences.Count > 0)
+    if (projectInfo.Packages.Count > 0)
     {
         var builder = new StringBuilder();
-        foreach (var package in projectInfo.PackageReferences)
+        foreach (var package in projectInfo.Packages)
         {
-            builder.AppendLine($@"    <PackageReference Include=""{package}"" />");
+            var version = package.Version is not null
+                ? $@"Version=""{package.Version}"""
+                : "";
+            builder.AppendLine($@"    <PackageReference Include=""{package.Name}"" {version} />");
         }
 
         itemGroups = builder.ToString();
@@ -183,9 +193,21 @@ string FindDotnetPath()
     return fileName;
 }
 
+internal class Package
+{
+    internal string Name { get;}
+    internal string? Version { get; }
+
+    internal Package(string name, string? version)
+    {
+        Name = name;
+        Version = version;
+    }
+}
+
 internal class ProjectInfo
 {
     internal string? TargetFramework { get; set;}
     internal List<string> SourceFiles { get; set; } = new();
-    internal List<string> PackageReferences { get; set;}  = new();
+    internal List<Package> Packages { get; set;}  = new();
 }
