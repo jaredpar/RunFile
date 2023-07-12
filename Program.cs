@@ -19,7 +19,7 @@ try
 
     info.SourceFiles.AddRange(
         Directory
-            .EnumerateFiles(sourceDirectory, "*.cs", SearchOption.AllDirectories));
+            .EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories));
 
     if (info.SourceFiles.Count == 0)
     {
@@ -57,7 +57,12 @@ void CopySourceFiles(ProjectInfo projectInfo, string sourceDirectory, string des
     var nugetSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     foreach (var sourceFilePath in projectInfo.SourceFiles)
     {
-        var destFilePath = Path.Combine(destDirectory, sourceFilePath.Substring(sourceDirectory.Length + 1));
+        var destFilePath = sourceFilePath.Substring(sourceDirectory.Length);
+        if (destFilePath.StartsWith(Path.DirectorySeparatorChar))
+        {
+            destFilePath = destFilePath.Substring(1);
+        }
+        destFilePath = Path.Combine(destDirectory, destFilePath);
         var content = File.ReadAllText(sourceFilePath);
         content = ScanForDirectives(content);
         Directory.CreateDirectory(Path.GetDirectoryName(destFilePath)!);
